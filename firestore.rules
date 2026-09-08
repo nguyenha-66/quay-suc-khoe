@@ -1,0 +1,14 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Chặn cơ bản: chỉ cho phép đọc/ghi khi trình duyệt đã đăng nhập
+    // (kể cả đăng nhập ẩn danh). Trang web tự đăng nhập ẩn danh ngay khi mở,
+    // nên người dùng bình thường không thấy khác biệt gì.
+    // Việc này chặn được các công cụ/bot dò quét Firestore trực tiếp mà
+    // không mở trang web, nhưng KHÔNG thay thế được việc kiểm tra vai trò
+    // nhân viên/hội viên (việc đó vẫn do phần mềm tự làm ở giao diện).
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
