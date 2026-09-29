@@ -366,6 +366,20 @@
 <div id="tt"></div>
 <div id="pr"></div>
 
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+<script>
+/* ĐIỀN THÔNG TIN FIREBASE CỦA BẠN VÀO ĐÂY (lấy từ Firebase Console → Project settings → Your apps) */
+var firebaseConfig = {
+  apiKey: "AIzaSyDFswpKFtcqWVfaYzDazjXO0EnNjk8x0ys",
+  authDomain: "phan---mem---quan---ly---quay.firebaseapp.com",
+  projectId: "phan---mem---quan---ly---quay",
+  storageBucket: "phan---mem---quan---ly---quay.firebasestorage.app",
+  messagingSenderId: "1073250940438",
+  appId: "1:1073250940438:web:4834f82695669b9fd5e737"
+};
+</script>
 <script>
 (function(){
 "use strict";
@@ -507,18 +521,18 @@ function save(path,data){
 function patch(path,data){
   if(!ready())return Promise.reject({code:'not_granted'});
   return docRef(path).update(data).catch(function(e){
-    if(e&&e.code==='invalid_argument')return docRef(path).set(data);
+    if(e&&(e.code==='not-found'||e.code==='invalid_argument'||e.code==='invalid-argument'))return docRef(path).set(data);
     throw e;
   });
 }
 function dbErr(e){
   var c=e&&e.code||'unavailable';
-  var m={invalid_argument:'Dữ liệu không hợp lệ, chưa lưu được.',
-    resource_exhausted:'Hệ thống đang bận, thử lại sau một chút.',
-    quota_exceeded:'Kho dữ liệu đã đầy. Cần dọn bớt dữ liệu cũ.',
-    revoked:'Quyền truy cập đã bị thu hồi. Mở lại trang.',
-    not_granted:'Trang chưa được cấp kho dữ liệu.',
-    capability_disabled:'Kho dữ liệu không dùng được trong lượt xem này.'};
+  var m={'invalid-argument':'Dữ liệu không hợp lệ, chưa lưu được.',
+    'resource-exhausted':'Hệ thống đang bận, thử lại sau một chút.',
+    'permission-denied':'Không có quyền truy cập dữ liệu này. Kiểm tra lại Firestore Rules.',
+    'unauthenticated':'Phiên đăng nhập đã hết, hãy tải lại trang.',
+    'unavailable':'Mất kết nối tới kho dữ liệu, thử lại.',
+    'not-found':'Không tìm thấy dữ liệu.'};
   toast(m[c]||'Không lưu được, thử lại.',true);
   return null;
 }
@@ -574,19 +588,46 @@ function kiemTraMa(id,lan){
 function lanDoCuoi(m){var a=m.doLan||[];return a.length?a[0]:null}
 
 /* ========== khoi dong ========== */
+function downloadsShim(){
+  return {
+    save:function(opts){
+      return new Promise(function(resolve,reject){
+        try{
+          var data=opts&&opts.data;
+          var blob=(typeof Blob!=='undefined'&&data instanceof Blob)?data:new Blob([data],{type:'text/plain;charset=utf-8'});
+          var url=URL.createObjectURL(blob);
+          var a=document.createElement('a');
+          a.href=url;a.download=(opts&&opts.filename)||'tep-tai-ve';
+          document.body.appendChild(a);a.click();document.body.removeChild(a);
+          setTimeout(function(){URL.revokeObjectURL(url)},1500);
+          resolve();
+        }catch(e){reject(e)}
+      });
+    }
+  };
+}
 function boot(){
   render();
-  if(!window.claude||!window.claude.use){offline();return}
-  window.claude.use('db').then(function(db){
-    if(!db){offline();return}
-    S.db=db;
-    window.claude.use('downloads').then(function(d){S.dl=d}).catch(function(){});
+  if(typeof firebase==='undefined'){offline('Chưa tải được thư viện Firebase. Kiểm tra kết nối mạng rồi tải lại trang.');return}
+  if(!firebaseConfig||firebaseConfig.apiKey==='ĐIỀN_API_KEY'){
+    offline('Chưa điền cấu hình Firebase. Mở file index.html, tìm biến "firebaseConfig" ở gần đầu file và điền thông tin lấy từ Firebase Console (Project settings → Your apps).');
+    return;
+  }
+  try{
+    firebase.initializeApp(firebaseConfig);
+  }catch(e){offline('Không khởi tạo được Firebase: '+(e&&e.message||''));return}
+  firebase.auth().signInAnonymously().then(function(){
+    S.db=firebase.firestore();
+    try{S.db.settings({ignoreUndefinedProperties:true,merge:true})}catch(e){}
+    S.dl=downloadsShim();
     subscribe();
-  }).catch(function(){offline()});
+  }).catch(function(e){
+    offline('Không đăng nhập được vào kho dữ liệu: '+(e&&e.message||'')+'. Kiểm tra đã bật "Anonymous" trong Firebase Authentication → Sign-in method chưa.');
+  });
 }
-function offline(){
+function offline(msg){
   $('#boot').innerHTML='<div style="max-width:520px"><div style="font-size:21px;font-weight:700;letter-spacing:-.02em">Chưa mở được kho dữ liệu</div>'+
-  '<p style="font-size:14px;color:var(--ink-3);margin-top:8px">Mở trang bằng tài khoản Claude của công ty.</p></div>';
+  '<p style="font-size:14.5px;color:var(--ink-2);line-height:1.6;margin-top:10px">'+esc(msg||'Trang chưa kết nối được tới kho dữ liệu.')+'</p></div>';
 }
 
 function subscribe(){
