@@ -3985,6 +3985,55 @@ function xuatCSVBan(){
   taiFile('phieu-xuat-'+S.dayId+'.csv',csv(rows));
 }
 
+function nhapSaoLuu(file,tt){
+  if(S.dangNhap)return;
+  function bao(t){tt.textContent=t}
+  var r=new FileReader();
+  r.onerror=function(){bao('Không đọc được file.')};
+  r.onload=function(){
+    var d;try{d=JSON.parse(r.result)}catch(e){return bao('File không đúng định dạng sao lưu.')}
+    if(!d||d.app!=='quay-suc-khoe'||!d.col)return bao('File này không phải file sao lưu của phần mềm.');
+    S.dangNhap=true;
+    var viec=[],kq={moi:0,bosung:0,giunguyen:0,tep:0};
+    Object.keys(d.col).forEach(function(c){Object.keys(d.col[c]).forEach(function(id){viec.push({c:c,id:id,v:d.col[c][id]})})});
+    var tepIds=Object.keys(d.files||{}),i=0,j=0;
+    function motDoc(){
+      if(i>=viec.length)return motTep();
+      var w=viec[i++];bao('Đang nhập dữ liệu '+i+'/'+viec.length+'...');
+      var ref=docRef(w.c+'/'+w.id);
+      return ref.get().then(function(s){
+        if(!s.exists){kq.moi++;return ref.set(w.v)}
+        var cu=s.data()||{},them={};
+        Object.keys(w.v).forEach(function(k){if(cu[k]===undefined||cu[k]===null||cu[k]==='')them[k]=w.v[k]});
+        if(Object.keys(them).length){kq.bosung++;return ref.set(them,{merge:true})}
+        kq.giunguyen++;
+      }).then(motDoc);
+    }
+    function motTep(){
+      if(j>=tepIds.length)return Promise.resolve();
+      var fid=tepIds[j++],t=d.files[fid];bao('Đang nhập tệp '+j+'/'+tepIds.length+': '+(t.meta&&t.meta.ten||fid));
+      var ref=docRef('files/'+fid);
+      return ref.get().then(function(s){
+        if(s.exists)return;
+        var k=0;
+        function phan(){
+          if(k>=t.parts.length)return ref.set(t.meta).then(function(){kq.tep++});
+          var n=k++;return docRef('files/'+fid+'/data/'+n).set({b64:t.parts[n]}).then(phan);
+        }
+        return phan();
+      }).then(motTep);
+    }
+    motDoc().then(function(){
+      S.dangNhap=false;
+      bao('Xong. Thêm mới '+kq.moi+' mục, bổ sung '+kq.bosung+' mục, giữ nguyên '+kq.giunguyen+' mục, thêm '+kq.tep+' tệp.');
+      ghiNhatKy('Nhập dữ liệu từ bản Claude',S.me&&S.me.ten,'');
+      toast('Đã nhập xong dữ liệu');
+    }).catch(function(e){S.dangNhap=false;bao('Dừng giữa chừng: '+(e&&e.message||e)+'. Chọn lại file để chạy tiếp, phần đã nhập sẽ được bỏ qua.')});
+  };
+  bao('Đang đọc file...');
+  r.readAsText(file);
+}
+
 /* ========== 11. NHAT KY ========== */
 function vLog(m){
   head(m,'Nhật ký thao tác',null,[btn('Đổi ngày',function(){
@@ -4016,6 +4065,15 @@ function vSettings(m){
       .then(function(){toast('Đã lưu')}).catch(dbErr);
   },'pri'));
   m.appendChild(c0);
+  if(S.me&&S.me.vaiTro==='chu'){
+    var cNhap=E('div',{'class':'card'});cNhap.appendChild(E('h3',null,'Nhập dữ liệu từ bản Claude'));
+    cNhap.appendChild(E('p',{'class':'mut',style:'margin:0 0 12px'},'Chọn file sao lưu (.json). Phần mềm chỉ thêm dữ liệu còn thiếu, không ghi đè hay xoá dữ liệu đang có.'));
+    var inNhap=E('input',{type:'file',accept:'.json,application/json',id:'nhap_f'});
+    var ttNhap=E('div',{'class':'mut',id:'nhap_tt',style:'margin-top:10px'});
+    inNhap.addEventListener('change',function(){if(inNhap.files[0])nhapSaoLuu(inNhap.files[0],ttNhap)});
+    cNhap.appendChild(inNhap);cNhap.appendChild(ttNhap);
+    m.appendChild(cNhap);
+  }
 
   var cNh=E('div',{'class':'card'});cNh.appendChild(E('h3',null,'Tài khoản nhận thanh toán'));
   var cfg=S.cfg||{};
